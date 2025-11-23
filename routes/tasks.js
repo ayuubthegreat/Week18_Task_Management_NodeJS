@@ -1,7 +1,9 @@
+import { error } from "console";
 import express from "express";
 import fs from "fs/promises";
 import path from "path";
 import { fileURLToPath } from "url";
+import { success } from "zod";
 
 const router = express.Router();
 
@@ -153,19 +155,39 @@ router.post("/tasks", async (req, res) => {
   try {
     // TODO: Implement task creation
     // 1. Extract data from req.body (title, description, status, priority, etc.)
+    const { title, description, status, priority } = req.body;
     // 2. Validate the data using validateTaskData function
+    const validationResult = validateTaskData({ title, description, status, priority });
+    if (!validationResult.isValid) {
+      return res.status(400).json({
+        success: false,
+        error: validationResult.error,
+      });
+    }
     // 3. Get all existing tasks using getAllTasks()
+    const tasks = await getAllTasks();
     // 4. Generate a new ID for the task
+    const newId = (tasks.length > 0 ? tasks.length + 1 : 1).toString();
     // 5. Create a new task object with all required fields
+    const newTask = {
+      id: newId,
+      title,
+      description,
+      status,
+      priority,
+      dueDate: req.body.dueDate || null,
+      assignedTo: req.body.assignedTo || "",
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
     // 6. Add the task to the tasks array
+    tasks.push(newTask);
     // 7. Save to file using writeTasks()
+    await writeTasks(tasks);
     // 8. Send success response with status 201
-
-    // Temporary response - remove this when you implement the above
-    res.status(501).json({
-      success: false,
-      error:
-        "POST endpoint not implemented yet - implement task creation above",
+    res.status(201).json({
+      success: true,
+      data: newTask,
     });
   } catch (error) {
     res.status(500).json({
@@ -182,18 +204,57 @@ router.put("/tasks/:id", async (req, res) => {
   try {
     // TODO: Implement task update
     // 1. Extract the task ID from req.params
+    const {id} = req.params;
     // 2. Get the update data from req.body
-    // 3. Validate the data if status or priority is being updated
+    const { title, description, status, priority } = req.body;
+    
+    // 3. Validate status if provided
+    if (status) {
+      const validStatuses = ["pending", "in-progress", "completed", "cancelled"];
+      if (!validStatuses.includes(status)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid status. Must be one of: ${validStatuses.join(", ")}`,
+        });
+      }
+    }
+    
+    // Validate priority if provided
+    if (priority) {
+      const validPriorities = ["low", "medium", "high", "urgent"];
+      if (!validPriorities.includes(priority)) {
+        return res.status(400).json({
+          success: false,
+          error: `Invalid priority. Must be one of: ${validPriorities.join(", ")}`,
+        });
+      }
+    }
+    
     // 4. Get all tasks and find the task by ID
+     const tasks = await getAllTasks();
+     const task = tasks.find((task) => task.id === id); 
     // 5. Check if task exists, return 404 if not found
+    if (task == null) {
+      return res.status(404).json({
+        success: false,
+        error: "Task not found.",
+      })
+    }
     // 6. Update the task with new data
+    task.title = title || task.title;
+    task.description = description || task.description;
+    task.status = status || task.status;
+    task.priority = priority || task.priority;
+    task.dueDate = req.body.dueDate !== undefined ? req.body.dueDate : task.dueDate;
+    task.assignedTo = req.body.assignedTo !== undefined ? req.body.assignedTo : task.assignedTo;
+    task.updatedAt = new Date().toISOString();
     // 7. Save to file using writeTasks()
+    await writeTasks(tasks);
     // 8. Send success response with the updated task
-
-    // Temporary response - remove this when you implement the above
-    res.status(501).json({
-      success: false,
-      error: "PUT endpoint not implemented yet - implement task update above",
+    return res.status(200).json({
+      success: true,
+      message: "Task updated successfully.",
+      data: task,
     });
   } catch (error) {
     res.status(500).json({
@@ -209,19 +270,30 @@ router.delete("/tasks/:id", async (req, res) => {
   try {
     // TODO: Implement task deletion
     // 1. Extract the task ID from req.params
+    const {id} = req.params;
     // 2. Get all tasks and find the task by ID
+    const tasks = await getAllTasks();
     // 3. Check if task exists, return 404 if not found
-    // 4. Store the task before deletion (for response)
-    // 5. Remove the task from the array
-    // 6. Save to file using writeTasks()
-    // 7. Send success response with the deleted task
-
-    // Temporary response - remove this when you implement the above
-    res.status(501).json({
+    const task = tasks.find((task) => task.id === id);
+    if (task == null) {
+     return res.status(404).json({
       success: false,
-      error:
-        "DELETE endpoint not implemented yet - implement task deletion above",
-    });
+      error: "Error deleting task."
+    })
+    }
+   
+    // 4. Store the task before deletion (for response)
+    
+    // 5. Remove the task from the array
+    const newTasks = tasks.filter((t) => {return t.id !== id});
+    tasks = newTasks;
+    // 6. Save to file using writeTasks()
+    await writeTasks(tasks);
+    // 7. Send success response with the deleted task
+    return res.status(200).json({
+      success: true,
+      error: `Success! Task with id ${id} has been updated!`
+    })
   } catch (error) {
     res.status(500).json({
       success: false,
